@@ -1,0 +1,1047 @@
+import java.util.ArrayList;
+import tester.*;
+import javalib.impworld.*;
+import java.awt.Color;
+import javalib.worldimages.*;
+import java.util.Random;
+
+// Represents a single cell in the Minesweeper game
+class Cell {
+  // Is this cell a mine?
+  boolean isMine;
+  // Is this cell revealed?
+  boolean isRevealed;
+  // Is this cell flagged?
+  boolean isFlagged;
+  // List of neighboring cells
+  ArrayList<Cell> neighbors;
+  // Number of mines adjacent to this cell
+  int adjacentMines;
+
+  // Constructor for a cell
+  Cell(boolean isMine) {
+    this.isMine = isMine;
+    this.isRevealed = false;
+    this.isFlagged = false;
+    this.neighbors = new ArrayList<Cell>();
+    this.adjacentMines = 0; // Will be calculated later
+  }
+
+  // Links this cell to its neighbors
+  void linkNeighbors(ArrayList<Cell> neighbors) {
+    this.neighbors = neighbors;
+  }
+
+  // Calculates the number of adjacent mines
+  void calculateAdjacentMines() {
+    int count = 0;
+    for (Cell neighbor : this.neighbors) {
+      if (neighbor.isMine) {
+        count++;
+      }
+    }
+    this.adjacentMines = count;
+  }
+
+  // Draws this cell
+  WorldImage drawCell(int cellSize) {
+    if (this.isRevealed) {
+      if (this.isMine) {
+        return new RectangleImage(cellSize, cellSize, OutlineMode.SOLID, Color.RED);
+      }
+      else {
+        if (this.adjacentMines == 0) {
+          return new RectangleImage(cellSize, cellSize, OutlineMode.SOLID, Color.LIGHT_GRAY);
+        }
+        else {
+          return new OverlayImage(new TextImage(String.valueOf(this.adjacentMines), Color.BLUE),
+              new RectangleImage(cellSize, cellSize, OutlineMode.SOLID, Color.LIGHT_GRAY));
+        }
+      }
+    }
+    else { // Not revealed
+      if (this.isFlagged) {
+        // A simple orange equilateral triangle for the flag
+        WorldImage flag = new EquilateralTriangleImage(cellSize / 2, OutlineMode.SOLID,
+            Color.ORANGE);
+        return new OverlayImage(flag,
+            new RectangleImage(cellSize, cellSize, OutlineMode.SOLID, Color.BLUE));
+      }
+      else {
+        return new RectangleImage(cellSize, cellSize, OutlineMode.SOLID, Color.BLUE);
+      }
+    }
+  }
+
+  // Reveals this cell
+  // Returns true if a mine was revealed, false otherwise
+  boolean reveal() {
+    if (this.isRevealed || this.isFlagged) {
+      return false; // Already revealed or flagged, do nothing
+    }
+    this.isRevealed = true;
+    return this.isMine;
+  }
+
+  // Toggles the flag on this cell
+  void toggleFlag() {
+    if (!this.isRevealed) { // Can only flag unrevealed cells
+      this.isFlagged = !this.isFlagged;
+    }
+  }
+}
+
+// Represents the Minesweeper game world
+class MineSweeperWorld extends World {
+  // Dimensions of the grid
+  int rows;
+  int cols;
+  // Number of mines
+  int numMines;
+  // Grid of cells
+  ArrayList<ArrayList<Cell>> board;
+  // Random object for mine placement
+  Random rand;
+  // Cell size for drawing
+  int cellSize = 30; // pixels
+  // Game over flag
+  boolean gameOver;
+  // Win flag
+  boolean win;
+  // Track if this is the first click
+  boolean isFirstClick;
+  // Store the first clicked position
+  int firstClickRow;
+  int firstClickCol;
+  // Track mines left (mines - flags placed)
+  int minesLeft;
+
+  // Constructor for MineSweeperWorld with a seeded Random object for testing
+  public MineSweeperWorld(int rows, int cols, int numMines, Random rand) {
+    if (rows <= 0 || cols <= 0 || numMines < 0 || numMines > rows * cols) {
+      throw new IllegalArgumentException("Invalid grid dimensions or number of mines.");
+    }
+    this.rows = rows;
+    this.cols = cols;
+    this.numMines = numMines;
+    this.rand = rand;
+    this.gameOver = false;
+    this.win = false;
+    this.isFirstClick = true;
+    this.firstClickRow = -1;
+    this.firstClickCol = -1;
+    this.minesLeft = numMines;
+    this.board = new ArrayList<ArrayList<Cell>>();
+
+    // Initialize the board with empty cells
+    for (int i = 0; i < this.rows; i++) {
+      ArrayList<Cell> row = new ArrayList<Cell>();
+      for (int j = 0; j < this.cols; j++) {
+        row.add(new Cell(false)); // Initially no mines
+      }
+      this.board.add(row);
+    }
+
+    // Don't place mines yet - wait for first click
+    // this.placeMines();
+
+    // Link neighbors and calculate adjacent mines for all cells
+    this.linkAllNeighbors();
+    // Don't calculate adjacent mines yet since no mines are placed
+    // this.calculateAllAdjacentMines();
+  }
+
+  // Default constructor for actual play (unseeded random)
+  public MineSweeperWorld(int rows, int cols, int numMines) {
+    this(rows, cols, numMines, new Random());
+  }
+
+  // Places mines randomly on the board, ensuring distinct positions
+  // Avoids placing mines on the first clicked cell and its neighbors
+  void placeMines() {
+    int minesPlaced = 0;
+    while (minesPlaced < this.numMines) {
+      int r = this.rand.nextInt(this.rows);
+      int c = this.rand.nextInt(this.cols);
+      Cell cell = this.board.get(r).get(c);
+
+      // Don't place a mine if:
+      // 1. There's already a mine here, OR
+      // 2. This is the first clicked cell, OR
+      // 3. This is a neighbor of the first clicked cell
+      boolean isFirstClickCell = (r == this.firstClickRow && c == this.firstClickCol);
+      boolean isNeighborOfFirstClick = false;
+
+      if (this.firstClickRow >= 0 && this.firstClickCol >= 0) {
+        // Check if this cell is a neighbor of the first clicked cell
+        for (int dr = -1; dr <= 1; dr++) {
+          for (int dc = -1; dc <= 1; dc++) {
+            if (r == this.firstClickRow + dr && c == this.firstClickCol + dc) {
+              isNeighborOfFirstClick = true;
+              break;
+            }
+          }
+          if (isNeighborOfFirstClick) {
+            break;
+          }
+        }
+      }
+
+      if (!cell.isMine && !isFirstClickCell && !isNeighborOfFirstClick) {
+        cell.isMine = true;
+        minesPlaced++;
+      }
+    }
+  }
+
+  // Links all cells to their neighbors
+  void linkAllNeighbors() {
+    for (int r = 0; r < this.rows; r++) {
+      for (int c = 0; c < this.cols; c++) {
+        Cell currentCell = this.board.get(r).get(c);
+        ArrayList<Cell> neighbors = new ArrayList<Cell>();
+        for (int dr = -1; dr <= 1; dr++) {
+          for (int dc = -1; dc <= 1; dc++) {
+            if (dr == 0 && dc == 0) {
+              continue; // Skip the cell itself
+            }
+            int nr = r + dr;
+            int nc = c + dc;
+            if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
+              neighbors.add(this.board.get(nr).get(nc));
+            }
+          }
+        }
+        currentCell.linkNeighbors(neighbors);
+      }
+    }
+  }
+
+  // Calculates adjacent mines for all cells on the board
+  void calculateAllAdjacentMines() {
+    for (int r = 0; r < this.rows; r++) {
+      for (int c = 0; c < this.cols; c++) {
+        this.board.get(r).get(c).calculateAdjacentMines();
+      }
+    }
+  }
+
+  // Updates the mines left count based on flags placed
+  void updateMinesLeft() {
+    int flagsPlaced = 0;
+    for (ArrayList<Cell> row : this.board) {
+      for (Cell cell : row) {
+        if (cell.isFlagged) {
+          flagsPlaced++;
+        }
+      }
+    }
+    this.minesLeft = this.numMines - flagsPlaced;
+  }
+
+  // Draws the game board scene
+  @Override
+  public WorldScene makeScene() {
+    WorldScene scene = this.getEmptyScene();
+
+    // Add white scoreboard background at the top
+    int scoreboardHeight = 50;
+    WorldImage scoreboardBg = new RectangleImage(this.cols * this.cellSize, scoreboardHeight,
+        OutlineMode.SOLID, Color.WHITE);
+    scene.placeImageXY(scoreboardBg, this.cols * this.cellSize / 2, scoreboardHeight / 2);
+
+    // Add mines left counter
+    this.updateMinesLeft();
+    WorldImage minesLeftText = new TextImage("Mines Left: " + this.minesLeft, 20, Color.BLACK);
+    scene.placeImageXY(minesLeftText, 100, scoreboardHeight / 2);
+
+    // Add restart instruction if game is over
+    if (this.gameOver) {
+      WorldImage restartText = new TextImage("Press 'R' to restart", 16, Color.BLUE);
+      scene.placeImageXY(restartText, this.cols * this.cellSize - 150, scoreboardHeight / 2);
+    }
+
+    // Draw the game board below the scoreboard
+    for (int r = 0; r < this.rows; r++) {
+      for (int c = 0; c < this.cols; c++) {
+        Cell cell = this.board.get(r).get(c);
+        scene.placeImageXY(cell.drawCell(this.cellSize), c * this.cellSize + this.cellSize / 2,
+            r * this.cellSize + this.cellSize / 2 + scoreboardHeight);
+      }
+    }
+
+    if (this.gameOver) {
+      String msg = "";
+      Color color;
+      if (this.win) {
+        msg = "YOU WIN!!!";
+        color = Color.GREEN;
+      }
+      else {
+        msg = "GAME OVER :(";
+        color = Color.RED;
+      }
+      WorldImage endText = new OverlayImage(new TextImage(msg, 50, color), new EmptyImage());
+      scene.placeImageXY(endText, this.cols * this.cellSize / 2,
+          this.rows * this.cellSize / 2 + scoreboardHeight);
+    }
+    return scene;
+  }
+
+  // Handles mouse clicks on the game board
+  @Override
+  public void onMouseClicked(Posn pos, String buttonName) {
+    if (this.gameOver) {
+      return; // Do nothing if game is over
+    }
+
+    int scoreboardHeight = 50;
+    int clickedCol = pos.x / this.cellSize;
+    int clickedRow = (pos.y - scoreboardHeight) / this.cellSize;
+
+    // Check if click is within bounds
+    if (clickedRow < 0 || clickedRow >= this.rows || clickedCol < 0 || clickedCol >= this.cols) {
+      return;
+    }
+
+    Cell clickedCell = this.board.get(clickedRow).get(clickedCol);
+
+    if (buttonName.equals("LeftButton")) {
+      // Handle first click specially
+      if (this.isFirstClick) {
+        this.firstClickRow = clickedRow;
+        this.firstClickCol = clickedCol;
+        this.isFirstClick = false;
+
+        // Place mines after first click (avoiding the clicked cell and its neighbors)
+        this.placeMines();
+        this.calculateAllAdjacentMines();
+      }
+
+      if (clickedCell.reveal()) { // If a mine was revealed
+        this.gameOver = true;
+        this.win = false;
+        // Reveal all mines on game over
+        for (ArrayList<Cell> row : this.board) {
+          for (Cell cell : row) {
+            if (cell.isMine) {
+              cell.isRevealed = true;
+            }
+          }
+        }
+      }
+      else {
+        // If the revealed cell has no adjacent mines, trigger flood fill
+        if (clickedCell.adjacentMines == 0) {
+          this.floodFill(clickedCell);
+        }
+      }
+    }
+    else if (buttonName.equals("RightButton")) {
+      clickedCell.toggleFlag();
+    }
+    this.checkWinCondition();
+  }
+
+  // Implements the flood-fill behavior (BFS-like) for cells with no adjacent
+  // mines
+  void floodFill(Cell startCell) {
+    // Using an ArrayList as a queue for BFS-like flood fill
+    ArrayList<Cell> queue = new ArrayList<Cell>();
+    // Using a set to track cells we've already processed to avoid duplicates
+    ArrayList<Cell> processed = new ArrayList<Cell>();
+
+    // Add the start cell's neighbors to the queue (since startCell is already
+    // revealed)
+    if (startCell.adjacentMines == 0) {
+      for (Cell neighbor : startCell.neighbors) {
+        if (!neighbor.isRevealed && !neighbor.isFlagged) {
+          queue.add(neighbor);
+          processed.add(neighbor);
+        }
+      }
+    }
+
+    processed.add(startCell);
+
+    while (!queue.isEmpty()) {
+      Cell current = queue.remove(0); // Dequeue
+
+      // Reveal the current cell if not already revealed or flagged
+      if (!current.isRevealed && !current.isFlagged) {
+        current.isRevealed = true;
+
+        // If it's an empty cell (0 adjacent mines), add ALL its unrevealed neighbors to
+        // the queue
+        // This creates a chain reaction that reveals large areas
+        if (current.adjacentMines == 0) {
+          for (Cell neighbor : current.neighbors) {
+            if (!neighbor.isRevealed && !neighbor.isFlagged && !processed.contains(neighbor)) {
+              queue.add(neighbor); // Enqueue unrevealed, unflagged neighbors
+              processed.add(neighbor); // Mark as processed
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Checks if the game has been won (all non-mine cells revealed)
+  void checkWinCondition() {
+    int revealedNonMines = 0;
+    int totalNonMines = (this.rows * this.cols) - this.numMines;
+
+    for (ArrayList<Cell> row : this.board) {
+      for (Cell cell : row) {
+        if (!cell.isMine && cell.isRevealed) {
+          revealedNonMines++;
+        }
+      }
+    }
+
+    if (revealedNonMines == totalNonMines) {
+      this.gameOver = true;
+      this.win = true;
+    }
+  }
+
+  // Handles key presses
+  @Override
+  public void onKeyEvent(String key) {
+    if (key.equals("r") || key.equals("R")) {
+      this.restartGame();
+    }
+  }
+
+  // Restarts the game with a new layout of mines
+  void restartGame() {
+    // Reset game state
+    this.gameOver = false;
+    this.win = false;
+    this.isFirstClick = true;
+    this.firstClickRow = -1;
+    this.firstClickCol = -1;
+    this.minesLeft = this.numMines;
+
+    // Clear the board
+    this.board.clear();
+
+    // Initialize the board with empty cells
+    for (int i = 0; i < this.rows; i++) {
+      ArrayList<Cell> row = new ArrayList<Cell>();
+      for (int j = 0; j < this.cols; j++) {
+        row.add(new Cell(false)); // Initially no mines
+      }
+      this.board.add(row);
+    }
+
+    // Link neighbors (mines will be placed on first click)
+    this.linkAllNeighbors();
+  }
+}
+
+// Welcome screen for difficulty selection
+class WelcomeWorld extends World {
+  // Cell size for drawing
+  int cellSize = 30;
+
+  // Constructor
+  WelcomeWorld() {
+  }
+
+  // Draws the welcome screen
+  @Override
+  public WorldScene makeScene() {
+    WorldScene scene = this.getEmptyScene();
+
+    // Background
+    WorldImage background = new RectangleImage(600, 400, OutlineMode.SOLID, Color.LIGHT_GRAY);
+    scene.placeImageXY(background, 300, 200);
+
+    // Title
+    WorldImage title = new TextImage("MINESWEEPER", 40, Color.BLACK);
+    scene.placeImageXY(title, 300, 80);
+
+    // Subtitle
+    WorldImage subtitle = new TextImage("Select Difficulty", 25, Color.BLACK);
+    scene.placeImageXY(subtitle, 300, 120);
+
+    // Easy button
+    WorldImage easyBg = new RectangleImage(150, 60, OutlineMode.SOLID, Color.GREEN);
+    WorldImage easyText = new TextImage("EASY", 20, Color.WHITE);
+    WorldImage easyButton = new OverlayImage(easyText, easyBg);
+    scene.placeImageXY(easyButton, 200, 200);
+
+    // Easy description
+    WorldImage easyDesc = new TextImage("8x8 - 10 mines", 15, Color.BLACK);
+    scene.placeImageXY(easyDesc, 200, 220);
+
+    // Medium button
+    WorldImage mediumBg = new RectangleImage(150, 60, OutlineMode.SOLID, Color.ORANGE);
+    WorldImage mediumText = new TextImage("MEDIUM", 20, Color.WHITE);
+    WorldImage mediumButton = new OverlayImage(mediumText, mediumBg);
+    scene.placeImageXY(mediumButton, 400, 200);
+
+    // Medium description
+    WorldImage mediumDesc = new TextImage("16x16 - 40 mines", 15, Color.BLACK);
+    scene.placeImageXY(mediumDesc, 400, 220);
+
+    // Hard button
+    WorldImage hardBg = new RectangleImage(150, 60, OutlineMode.SOLID, Color.RED);
+    WorldImage hardText = new TextImage("HARD", 20, Color.WHITE);
+    WorldImage hardButton = new OverlayImage(hardText, hardBg);
+    scene.placeImageXY(hardButton, 300, 300);
+
+    // Hard description
+    WorldImage hardDesc = new TextImage("30x16 - 99 mines", 15, Color.BLACK);
+    scene.placeImageXY(hardDesc, 300, 320);
+
+    return scene;
+  }
+
+  // Handles mouse clicks on difficulty buttons
+  @Override
+  public void onMouseClicked(Posn pos, String buttonName) {
+    if (buttonName.equals("LeftButton")) {
+      // Easy button (8x8, 10 mines)
+      if (pos.x >= 125 && pos.x <= 275 && pos.y >= 170 && pos.y <= 230) {
+        MineSweeperWorld game = new MineSweeperWorld(8, 8, 10);
+        game.bigBang(game.cols * game.cellSize, game.rows * game.cellSize + 50, 0.1);
+      }
+      // Medium button (16x16, 40 mines)
+      else if (pos.x >= 325 && pos.x <= 475 && pos.y >= 170 && pos.y <= 230) {
+        MineSweeperWorld game = new MineSweeperWorld(16, 16, 40);
+        game.bigBang(game.cols * game.cellSize, game.rows * game.cellSize + 50, 0.1);
+      }
+      // Hard button (30x16, 99 mines)
+      else if (pos.x >= 225 && pos.x <= 375 && pos.y >= 270 && pos.y <= 330) {
+        MineSweeperWorld game = new MineSweeperWorld(16, 30, 99);
+        game.bigBang(game.cols * game.cellSize, game.rows * game.cellSize + 50, 0.1);
+      }
+    }
+  }
+}
+
+// Examples class for testing
+class Examples {
+  // Method to run the game for testing
+  void testBigBang(Tester t) {
+    // Start with the welcome screen for difficulty selection
+    WelcomeWorld welcome = new WelcomeWorld();
+    welcome.bigBang(600, 400, 0.1);
+  }
+}
+
+// Comprehensive examples and tests for the Minesweeper game classes
+class ExamplesClass {
+  ExamplesClass() {
+  }
+
+  // Test data for Cell class
+  Cell emptyCell = new Cell(false);
+  Cell mineCell = new Cell(true);
+  Cell flaggedCell = new Cell(false);
+  Cell revealedCell = new Cell(false);
+
+  // Test data for MineSweeperWorld class
+  MineSweeperWorld smallGame = new MineSweeperWorld(5, 5, 3, new Random(42));
+  MineSweeperWorld mediumGame = new MineSweeperWorld(8, 8, 10, new Random(123));
+  MineSweeperWorld largeGame = new MineSweeperWorld(16, 16, 40, new Random(456));
+
+  // Initialize test data
+  void initTestData() {
+    // Set up flagged and revealed cells for testing
+    this.flaggedCell.isFlagged = true;
+    this.revealedCell.isRevealed = true;
+
+    // Create a simple 3x3 grid for testing neighbors
+    ArrayList<Cell> neighbors = new ArrayList<Cell>();
+    neighbors.add(new Cell(false));
+    neighbors.add(new Cell(true));
+    neighbors.add(new Cell(false));
+    this.emptyCell.linkNeighbors(neighbors);
+    this.emptyCell.calculateAdjacentMines();
+  }
+
+  // Tests for Cell class constructor
+  void testCellConstructor(Tester t) {
+    // Test 1: Empty cell
+    Cell testCell1 = new Cell(false);
+    t.checkExpect(testCell1.isMine, false);
+    t.checkExpect(testCell1.isRevealed, false);
+    t.checkExpect(testCell1.isFlagged, false);
+    t.checkExpect(testCell1.neighbors.size(), 0);
+    t.checkExpect(testCell1.adjacentMines, 0);
+
+    // Test 2: Mine cell
+    Cell testCell2 = new Cell(true);
+    t.checkExpect(testCell2.isMine, true);
+    t.checkExpect(testCell2.isRevealed, false);
+    t.checkExpect(testCell2.isFlagged, false);
+    t.checkExpect(testCell2.neighbors.size(), 0);
+    t.checkExpect(testCell2.adjacentMines, 0);
+
+    // Test 3: Multiple cells
+    Cell testCell3 = new Cell(false);
+    Cell testCell4 = new Cell(true);
+    t.checkExpect(testCell3.isMine, false);
+    t.checkExpect(testCell4.isMine, true);
+  }
+
+  // Tests for linkNeighbors method
+  void testLinkNeighbors(Tester t) {
+    // Test 1: Empty neighbors list
+    Cell cell1 = new Cell(false);
+    ArrayList<Cell> emptyNeighbors = new ArrayList<Cell>();
+    cell1.linkNeighbors(emptyNeighbors);
+    t.checkExpect(cell1.neighbors.size(), 0);
+
+    // Test 2: Single neighbor
+    Cell cell2 = new Cell(false);
+    ArrayList<Cell> singleNeighbor = new ArrayList<Cell>();
+    singleNeighbor.add(new Cell(true));
+    cell2.linkNeighbors(singleNeighbor);
+    t.checkExpect(cell2.neighbors.size(), 1);
+    t.checkExpect(cell2.neighbors.get(0).isMine, true);
+
+    // Test 3: Multiple neighbors
+    Cell cell3 = new Cell(false);
+    ArrayList<Cell> multipleNeighbors = new ArrayList<Cell>();
+    multipleNeighbors.add(new Cell(false));
+    multipleNeighbors.add(new Cell(true));
+    multipleNeighbors.add(new Cell(false));
+    cell3.linkNeighbors(multipleNeighbors);
+    t.checkExpect(cell3.neighbors.size(), 3);
+  }
+
+  // Tests for calculateAdjacentMines method
+  void testCalculateAdjacentMines(Tester t) {
+    this.initTestData();
+
+    // Test 1: No adjacent mines
+    Cell cell1 = new Cell(false);
+    ArrayList<Cell> noMines = new ArrayList<Cell>();
+    noMines.add(new Cell(false));
+    noMines.add(new Cell(false));
+    cell1.linkNeighbors(noMines);
+    cell1.calculateAdjacentMines();
+    t.checkExpect(cell1.adjacentMines, 0);
+
+    // Test 2: One adjacent mine
+    Cell cell2 = new Cell(false);
+    ArrayList<Cell> oneMine = new ArrayList<Cell>();
+    oneMine.add(new Cell(false));
+    oneMine.add(new Cell(true));
+    cell2.linkNeighbors(oneMine);
+    cell2.calculateAdjacentMines();
+    t.checkExpect(cell2.adjacentMines, 1);
+
+    // Test 3: Multiple adjacent mines
+    Cell cell3 = new Cell(false);
+    ArrayList<Cell> multipleMines = new ArrayList<Cell>();
+    multipleMines.add(new Cell(true));
+    multipleMines.add(new Cell(true));
+    multipleMines.add(new Cell(false));
+    cell3.linkNeighbors(multipleMines);
+    cell3.calculateAdjacentMines();
+    t.checkExpect(cell3.adjacentMines, 2);
+  }
+
+  // Tests for reveal method
+  void testReveal(Tester t) {
+    // Test 1: Reveal unrevealed, unflagged cell
+    Cell cell1 = new Cell(false);
+    t.checkExpect(cell1.reveal(), false); // Not a mine
+    t.checkExpect(cell1.isRevealed, true);
+
+    // Test 2: Reveal mine
+    Cell cell2 = new Cell(true);
+    t.checkExpect(cell2.reveal(), true); // Is a mine
+    t.checkExpect(cell2.isRevealed, true);
+
+    // Test 3: Try to reveal already revealed cell
+    Cell cell3 = new Cell(false);
+    cell3.reveal();
+    t.checkExpect(cell3.reveal(), false); // Should return false, no change
+    t.checkExpect(cell3.isRevealed, true);
+
+    // Test 4: Try to reveal flagged cell
+    Cell cell4 = new Cell(false);
+    cell4.isFlagged = true;
+    t.checkExpect(cell4.reveal(), false); // Should return false, no change
+    t.checkExpect(cell4.isRevealed, false);
+  }
+
+  // Tests for toggleFlag method
+  void testToggleFlag(Tester t) {
+    // Test 1: Flag unrevealed cell
+    Cell cell1 = new Cell(false);
+    cell1.toggleFlag();
+    t.checkExpect(cell1.isFlagged, true);
+
+    // Test 2: Unflag flagged cell
+    Cell cell2 = new Cell(false);
+    cell2.isFlagged = true;
+    cell2.toggleFlag();
+    t.checkExpect(cell2.isFlagged, false);
+
+    // Test 3: Try to flag revealed cell
+    Cell cell3 = new Cell(false);
+    cell3.isRevealed = true;
+    cell3.toggleFlag();
+    t.checkExpect(cell3.isFlagged, false); // Should not change
+  }
+
+  // Tests for MineSweeperWorld constructor
+  void testMineSweeperWorldConstructor(Tester t) {
+    // Test 1: Valid constructor
+    MineSweeperWorld game1 = new MineSweeperWorld(5, 5, 3, new Random(42));
+    t.checkExpect(game1.rows, 5);
+    t.checkExpect(game1.cols, 5);
+    t.checkExpect(game1.numMines, 3);
+    t.checkExpect(game1.gameOver, false);
+    t.checkExpect(game1.win, false);
+    t.checkExpect(game1.isFirstClick, true);
+    t.checkExpect(game1.board.size(), 5);
+    t.checkExpect(game1.board.get(0).size(), 5);
+
+    // Test 2: Different dimensions
+    MineSweeperWorld game2 = new MineSweeperWorld(8, 10, 15, new Random(123));
+    t.checkExpect(game2.rows, 8);
+    t.checkExpect(game2.cols, 10);
+    t.checkExpect(game2.numMines, 15);
+
+    // Test 3: Edge case - maximum mines
+    MineSweeperWorld game3 = new MineSweeperWorld(3, 3, 9, new Random(456));
+    t.checkExpect(game3.rows, 3);
+    t.checkExpect(game3.cols, 3);
+    t.checkExpect(game3.numMines, 9);
+  }
+
+  // Tests for placeMines method
+  void testPlaceMines(Tester t) {
+    // Test 1: Place mines after first click
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 2, new Random(42));
+    game1.firstClickRow = 1;
+    game1.firstClickCol = 1;
+    game1.placeMines();
+
+    // Count mines placed
+    int mineCount = 0;
+    for (ArrayList<Cell> row : game1.board) {
+      for (Cell cell : row) {
+        if (cell.isMine) {
+          mineCount++;
+        }
+      }
+    }
+    t.checkExpect(mineCount, 2);
+
+    // Test 2: Verify first click area is safe
+    t.checkExpect(game1.board.get(1).get(1).isMine, false); // First click cell
+    t.checkExpect(game1.board.get(0).get(0).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(0).get(1).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(0).get(2).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(1).get(0).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(1).get(2).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(2).get(0).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(2).get(1).isMine, false); // Neighbor
+    t.checkExpect(game1.board.get(2).get(2).isMine, false); // Neighbor
+
+    // Test 3: Place mines with different random seed
+    MineSweeperWorld game2 = new MineSweeperWorld(4, 4, 3, new Random(999));
+    game2.firstClickRow = 0;
+    game2.firstClickCol = 0;
+    game2.placeMines();
+
+    mineCount = 0;
+    for (ArrayList<Cell> row : game2.board) {
+      for (Cell cell : row) {
+        if (cell.isMine) {
+          mineCount++;
+        }
+      }
+    }
+    t.checkExpect(mineCount, 3);
+  }
+
+  // Tests for linkAllNeighbors method
+  void testLinkAllNeighbors(Tester t) {
+    // Test 1: 2x2 grid
+    MineSweeperWorld game1 = new MineSweeperWorld(2, 2, 1, new Random(42));
+    game1.linkAllNeighbors();
+
+    // Corner cell should have 3 neighbors
+    t.checkExpect(game1.board.get(0).get(0).neighbors.size(), 3);
+
+    // Test 2: 3x3 grid
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 2, new Random(123));
+    game2.linkAllNeighbors();
+
+    // Corner cell should have 3 neighbors
+    t.checkExpect(game2.board.get(0).get(0).neighbors.size(), 3);
+    // Edge cell should have 5 neighbors
+    t.checkExpect(game2.board.get(0).get(1).neighbors.size(), 5);
+    // Center cell should have 8 neighbors
+    t.checkExpect(game2.board.get(1).get(1).neighbors.size(), 8);
+
+    // Test 3: 1x1 grid (edge case)
+    MineSweeperWorld game3 = new MineSweeperWorld(1, 1, 0, new Random(456));
+    game3.linkAllNeighbors();
+    t.checkExpect(game3.board.get(0).get(0).neighbors.size(), 0);
+  }
+
+  // Tests for calculateAllAdjacentMines method
+  void testCalculateAllAdjacentMines(Tester t) {
+    // Test 1: Grid with no mines
+    MineSweeperWorld game1 = new MineSweeperWorld(2, 2, 0, new Random(42));
+    game1.placeMines();
+    game1.calculateAllAdjacentMines();
+
+    for (ArrayList<Cell> row : game1.board) {
+      for (Cell cell : row) {
+        t.checkExpect(cell.adjacentMines, 0);
+      }
+    }
+
+    // Test 2: Grid with one mine
+    MineSweeperWorld game2 = new MineSweeperWorld(2, 2, 1, new Random(123));
+    game2.firstClickRow = 0;
+    game2.firstClickCol = 0;
+    game2.placeMines();
+    game2.calculateAllAdjacentMines();
+
+    // Count cells with adjacent mines
+    int cellsWithAdjacentMines = 0;
+    for (ArrayList<Cell> row : game2.board) {
+      for (Cell cell : row) {
+        if (cell.adjacentMines > 0) {
+          cellsWithAdjacentMines++;
+        }
+      }
+    }
+    t.checkExpect(cellsWithAdjacentMines > 0, true);
+
+    // Test 3: Grid with multiple mines
+    MineSweeperWorld game3 = new MineSweeperWorld(3, 3, 3, new Random(456));
+    game3.firstClickRow = 1;
+    game3.firstClickCol = 1;
+    game3.placeMines();
+    game3.calculateAllAdjacentMines();
+
+    // Verify some cells have adjacent mines
+    boolean hasAdjacentMines = false;
+    for (ArrayList<Cell> row : game3.board) {
+      for (Cell cell : row) {
+        if (cell.adjacentMines > 0) {
+          hasAdjacentMines = true;
+          break;
+        }
+      }
+    }
+    t.checkExpect(hasAdjacentMines, true);
+  }
+
+  // Tests for floodFill method
+  void testFloodFill(Tester t) {
+    // Test 1: Single cell with no adjacent mines
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 0, new Random(42));
+    game1.linkAllNeighbors();
+    game1.calculateAllAdjacentMines();
+
+    Cell startCell = game1.board.get(1).get(1);
+    startCell.isRevealed = true;
+    game1.floodFill(startCell);
+
+    // All cells should be revealed since there are no mines
+    for (ArrayList<Cell> row : game1.board) {
+      for (Cell cell : row) {
+        t.checkExpect(cell.isRevealed, true);
+      }
+    }
+
+    // Test 2: Cell with adjacent mines (should not flood fill)
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 1, new Random(123));
+    game2.firstClickRow = 0;
+    game2.firstClickCol = 0;
+    game2.placeMines();
+    game2.calculateAllAdjacentMines();
+
+    Cell centerCell = game2.board.get(1).get(1);
+    centerCell.isRevealed = true;
+    game2.floodFill(centerCell);
+
+    // Only the center cell should be revealed
+    t.checkExpect(centerCell.isRevealed, true);
+
+    // Test 3: Flagged cells should not be revealed
+    MineSweeperWorld game3 = new MineSweeperWorld(2, 2, 0, new Random(456));
+    game3.linkAllNeighbors();
+    game3.calculateAllAdjacentMines();
+
+    // Flag one cell
+    game3.board.get(0).get(1).isFlagged = true;
+
+    Cell startCell3 = game3.board.get(0).get(0);
+    startCell3.isRevealed = true;
+    game3.floodFill(startCell3);
+
+    // Flagged cell should remain unrevealed
+    t.checkExpect(game3.board.get(0).get(1).isRevealed, false);
+    t.checkExpect(game3.board.get(0).get(1).isFlagged, true);
+  }
+
+  void testCheckWinCondition(Tester t) {
+    // Test 1: Game not won yet
+    MineSweeperWorld game1 = new MineSweeperWorld(2, 2, 1, new Random(42));
+    game1.firstClickRow = 0;
+    game1.firstClickCol = 0;
+    game1.placeMines();
+    game1.calculateAllAdjacentMines();
+
+    game1.checkWinCondition();
+    t.checkExpect(game1.win, false);
+    t.checkExpect(game1.gameOver, false);
+
+    // Test 2: Game won (all non-mine cells revealed)
+    MineSweeperWorld game2 = new MineSweeperWorld(2, 2, 1, new Random(123));
+    game2.firstClickRow = 0;
+    game2.firstClickCol = 0;
+    game2.placeMines();
+    game2.calculateAllAdjacentMines();
+
+    // Reveal all non-mine cells
+    for (ArrayList<Cell> row : game2.board) {
+      for (Cell cell : row) {
+        if (!cell.isMine) {
+          cell.isRevealed = true;
+        }
+      }
+    }
+
+    game2.checkWinCondition();
+    t.checkExpect(game2.win, true);
+    t.checkExpect(game2.gameOver, true);
+
+    // Test 3: Game with no mines (should win immediately when any cell is revealed)
+    MineSweeperWorld game3 = new MineSweeperWorld(2, 2, 0, new Random(456));
+    game3.linkAllNeighbors();
+    game3.calculateAllAdjacentMines();
+
+    // Reveal one cell
+    game3.board.get(0).get(0).isRevealed = true;
+    game3.checkWinCondition();
+    t.checkExpect(game3.win, true);
+    t.checkExpect(game3.gameOver, true);
+  }
+  // Tests for checkWinCondition method
+
+  // Tests for updateMinesLeft method
+  void testUpdateMinesLeft(Tester t) {
+    // Test 1: No flags placed
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 5, new Random(42));
+    game1.updateMinesLeft();
+    t.checkExpect(game1.minesLeft, 5);
+
+    // Test 2: Some flags placed
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 5, new Random(123));
+    game2.board.get(0).get(0).isFlagged = true;
+    game2.board.get(1).get(1).isFlagged = true;
+    game2.updateMinesLeft();
+    t.checkExpect(game2.minesLeft, 3);
+
+    // Test 3: All mines flagged
+    MineSweeperWorld game3 = new MineSweeperWorld(2, 2, 2, new Random(456));
+    game3.board.get(0).get(0).isFlagged = true;
+    game3.board.get(0).get(1).isFlagged = true;
+    game3.updateMinesLeft();
+    t.checkExpect(game3.minesLeft, 0);
+  }
+
+  // Tests for restartGame method
+  void testRestartGame(Tester t) {
+    // Test 1: Restart from initial state
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 2, new Random(42));
+    game1.restartGame();
+    t.checkExpect(game1.gameOver, false);
+    t.checkExpect(game1.win, false);
+    t.checkExpect(game1.isFirstClick, true);
+    t.checkExpect(game1.minesLeft, 2);
+    t.checkExpect(game1.board.size(), 3);
+
+    // Test 2: Restart after game over
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 2, new Random(123));
+    game2.gameOver = true;
+    game2.win = true;
+    game2.isFirstClick = false;
+    game2.minesLeft = 0;
+    game2.restartGame();
+    t.checkExpect(game2.gameOver, false);
+    t.checkExpect(game2.win, false);
+    t.checkExpect(game2.isFirstClick, true);
+    t.checkExpect(game2.minesLeft, 2);
+
+    // Test 3: Restart after some cells revealed
+    MineSweeperWorld game3 = new MineSweeperWorld(3, 3, 2, new Random(456));
+    game3.board.get(0).get(0).isRevealed = true;
+    game3.board.get(1).get(1).isFlagged = true;
+    game3.restartGame();
+    // Check that all cells are reset
+    boolean allCellsReset = true;
+    for (ArrayList<Cell> row : game3.board) {
+      for (Cell cell : row) {
+        if (cell.isRevealed || cell.isFlagged) {
+          allCellsReset = false;
+        }
+      }
+    }
+    t.checkExpect(allCellsReset, true);
+  }
+
+  // Tests for onKeyEvent method
+  void testOnKeyEvent(Tester t) {
+    // Test 1: Restart key (R)
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 2, new Random(42));
+    game1.gameOver = true;
+    game1.onKeyEvent("R");
+    t.checkExpect(game1.gameOver, false);
+    t.checkExpect(game1.isFirstClick, true);
+
+    // Test 2: Restart key (r) lowercase
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 2, new Random(123));
+    game2.gameOver = true;
+    game2.onKeyEvent("r");
+    t.checkExpect(game2.gameOver, false);
+    t.checkExpect(game2.isFirstClick, true);
+
+    // Test 3: Other key (should not restart)
+    MineSweeperWorld game3 = new MineSweeperWorld(3, 3, 2, new Random(456));
+    game3.gameOver = true;
+    game3.onKeyEvent("A");
+    t.checkExpect(game3.gameOver, true); // Should remain game over
+  }
+
+  // Tests for onMouseClicked method (basic functionality)
+  void testOnMouseClicked(Tester t) {
+    // Test 1: First click (should place mines)
+    MineSweeperWorld game1 = new MineSweeperWorld(3, 3, 2, new Random(42));
+    // Simulate click at position (45, 95) which corresponds to cell (1, 1)
+    game1.onMouseClicked(new Posn(45, 95), "LeftButton");
+    t.checkExpect(game1.isFirstClick, false);
+    t.checkExpect(game1.firstClickRow, 1);
+    t.checkExpect(game1.firstClickCol, 1);
+
+    // Test 2: Right click to flag
+    MineSweeperWorld game2 = new MineSweeperWorld(3, 3, 2, new Random(123));
+    // Simulate right click at position (45, 95) which corresponds to cell (1, 1)
+    game2.onMouseClicked(new Posn(45, 95), "RightButton");
+    t.checkExpect(game2.board.get(1).get(1).isFlagged, true);
+
+    // Test 3: Click outside bounds (should do nothing)
+    MineSweeperWorld game3 = new MineSweeperWorld(3, 3, 2, new Random(456));
+    int initialMinesLeft = game3.minesLeft;
+    // Simulate click outside the grid
+    game3.onMouseClicked(new Posn(200, 200), "LeftButton");
+    t.checkExpect(game3.minesLeft, initialMinesLeft); // Should not change
+  }
+}
