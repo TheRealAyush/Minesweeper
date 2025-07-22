@@ -1,0 +1,69 @@
+MINESWEEPER GAME - README
+========================
+
+DESCRIPTION
+----------
+This is a complete implementation of the classic Minesweeper game built in Java using the Impworld library. 
+The game features a graphical user interface with mouse and keyboard controls, multiple difficulty levels, and several quality-of-life improvements.
+
+GAME FEATURES
+-------------
+• Classic Minesweeper gameplay with left-click to reveal and right-click to flag
+• Three difficulty levels: Easy (8x8, 10 mines), Medium (16x16, 40 mines), Hard (30x16, 99 mines)
+• Real-time mines counter showing remaining mines
+• Flood-fill behavior for empty cells (chain reaction reveals)
+• First-click safety guarantee
+• Game restart functionality
+• Welcome screen for difficulty selection
+• Visual feedback for game states (win/lose)
+
+HOW TO PLAY
+-----------
+1. Game Controls:
+   - LEFT CLICK: Reveal a cell
+   - RIGHT CLICK: Place/remove a flag
+   - R KEY: Restart the game (when game is over)
+
+2. Game Rules:
+   - Reveal all non-mine cells to win
+   - Numbers show how many mines are adjacent to that cell
+   - Empty cells (0 adjacent mines) automatically reveal neighboring cells
+   - Avoid clicking on mines!
+
+EXTRA CREDIT FEATURES IMPLEMENTED
+================================
+
+1. WELCOME SCREEN WITH DIFFICULTY SELECTION
+   - Welcome screen with three difficulty buttons
+   - Easy: 8x8 grid with 10 mines (green button)
+   - Medium: 16x16 grid with 40 mines (orange button)  
+   - Hard: 30x16 grid with 99 mines (red button)
+   - Clear visual design with difficulty descriptions
+
+2. FIRST CLICK SAFETY GUARANTEE
+   - The first cell you click can NEVER be a mine
+   - All 8 neighboring cells around your first click are also guaranteed safe
+   - Mines are placed after the first click, ensuring a safe starting area
+   - This prevents frustrating instant losses
+
+3. MINES LEFT COUNTER
+   - White scoreboard at the top of the game window
+   - Shows "Mines Left: X" where X is the number of remaining mines
+   - Updates in real-time as you place or remove flags
+   - Formula: Mines Left = Total Mines - Flags Placed
+   - Helps players track their progress and flag usage
+
+4. GAME RESTART FUNCTIONALITY
+   - Press 'R' key to restart the game after winning or losing
+   - Creates a completely new mine layout
+   - Resets all game state (revealed cells, flags, etc.)
+   - Maintains the same difficulty level
+   - Blue "Press 'R' to restart" instruction appears when game ends
+
+5. FLOOD-FILL CHAIN REACTION
+   - When you click a cell with 0 adjacent mines, it triggers a chain reaction
+   - All connected empty cells are automatically revealed
+   - Creates large revealed areas at once, just like classic Minesweeper
+   - Stops when it reaches cells with adjacent mines
+   
+ENJOY PLAYING MINESWEEPER! 
